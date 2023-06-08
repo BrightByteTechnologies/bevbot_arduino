@@ -2,112 +2,124 @@
 #include <MFRC522.h>
 
 class Motor {
-  private:
-    int gsm;
-    int in1;
-    int in2;
+private:
+  int gsm;
+  int in1;
+  int in2;
 
-  public:
-    Motor(int motorPin, int input1Pin, int input2Pin)
-      : gsm(motorPin), in1(input1Pin), in2(input2Pin) {
-      pinMode(gsm, OUTPUT);
-      pinMode(in1, OUTPUT);
-      pinMode(in2, OUTPUT);
-    }
+  String currentDrivingState = "stop";
 
-    void fullSpeed(bool forwards) {
-      changeMotion(forwards ? LOW : HIGH, forwards ? HIGH : LOW, 255);
-    }
+public:
+  Motor(int motorPin, int input1Pin, int input2Pin)
+    : gsm(motorPin), in1(input1Pin), in2(input2Pin) {
+    pinMode(gsm, OUTPUT);
+    pinMode(in1, OUTPUT);
+    pinMode(in2, OUTPUT);
+  }
 
-    void middleSpeed(bool forwards) {
-      changeMotion(forwards ? LOW : HIGH, forwards ? HIGH : LOW, 125);
-    }
-
-    void fullStop() {
+  void fullStop() {
+    if (currentDrivingState != drivingStates[0])
       changeMotion(HIGH, LOW, 0);
-    }
+      currentDrivingState = drivingStates[0];
+  }
 
-  private:
-    void changeMotion(uint8_t IN1, uint8_t IN2, uint8_t Speed) {
-      digitalWrite(in1, IN1);
-      digitalWrite(in2, IN2);
-      analogWrite(gsm, Speed);
+  void middleSpeed(bool forwards) {
+    if (currentDrivingState != drivingStates[1]) {
+      changeMotion(forwards ? LOW : HIGH, forwards ? HIGH : LOW, 125);
+      currentDrivingState = drivingStates[1];
     }
+  }
+
+  void fullSpeed(bool forwards) {
+    if (currentDrivingState != drivingStates[2]) {
+      changeMotion(forwards ? LOW : HIGH, forwards ? HIGH : LOW, 255);
+      currentDrivingState = drivingStates[2];
+    }
+  }
+
+private:
+  char* drivingStates[3] = { "stop", "middle", "full" };
+
+  void changeMotion(uint8_t IN1, uint8_t IN2, uint8_t Speed) {
+    digitalWrite(in1, IN1);
+    digitalWrite(in2, IN2);
+    analogWrite(gsm, Speed);
+  }
 };
 
 class UltrasonicSensor {
-  private:
-    int trigPin;
-    int echoPin;
+private:
+  int trigPin;
+  int echoPin;
 
-  public:
-    UltrasonicSensor(int trig, int echo)
-      : trigPin(trig), echoPin(echo) {
-      pinMode(trigPin, OUTPUT);
-      pinMode(echoPin, INPUT);
-    }
+public:
+  UltrasonicSensor(int trig, int echo)
+    : trigPin(trig), echoPin(echo) {
+    pinMode(trigPin, OUTPUT);
+    pinMode(echoPin, INPUT);
+  }
 
-    int getDistance() {
-      digitalWrite(trigPin, LOW);
-      delayMicroseconds(2);
-      digitalWrite(trigPin, HIGH);
-      delayMicroseconds(10);
-      digitalWrite(trigPin, LOW);
-      long duration = pulseIn(echoPin, HIGH);
-      int distance = duration * 0.034 / 2;
+  int getDistance() {
+    digitalWrite(trigPin, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin, LOW);
+    long duration = pulseIn(echoPin, HIGH);
+    int distance = duration * 0.034 / 2;
 
-      return distance;
-    }
+    return distance;
+  }
 };
 
 class RFIDReader {
-  private:
-    byte* correctUID;
-    MFRC522 mfrc522;
-    int completedTask;
+private:
+  byte* correctUID;
+  MFRC522 mfrc522;
+  int completedTask;
 
-  public:
-    RFIDReader(int ssPin, int rstPin)
-      : correctUID(nullptr), mfrc522(ssPin, rstPin), completedTask(0) {}
+public:
+  RFIDReader(int ssPin, int rstPin)
+    : correctUID(nullptr), mfrc522(ssPin, rstPin), completedTask(0) {}
 
-    void setCorrectUID(byte* uid) {
-      correctUID = uid;
+  void setCorrectUID(byte* uid) {
+    correctUID = uid;
+  }
+
+  void begin() {
+    SPI.begin();
+    mfrc522.PCD_Init();
+  }
+
+  bool isCorrectCard() {
+    if (correctUID == nullptr) {
+      completedTask = -1;
+      return false;
     }
 
-    void begin() {
-      SPI.begin();
-      mfrc522.PCD_Init();
+    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
+      completedTask = -1;
+      return false;
     }
 
-    bool isCorrectCard() {
-      if (correctUID == nullptr) {
-        completedTask = -1;
-        return false;
-      }
-
-      if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
-        completedTask = -1;
-        return false;
-      }
-
-      for (byte i = 0; i < mfrc522.uid.size; i++) {
-        Serial.print(mfrc522.uid.uidByte[i], HEX);
-        Serial.print(" ");
-      }
-      Serial.println();
-
-      if (memcmp(mfrc522.uid.uidByte, correctUID, mfrc522.uid.size) == 0) {
-        completedTask = 1;
-        return true;
-      } else {
-        completedTask = -1;
-        return false;
-      }
+    for (byte i = 0; i < mfrc522.uid.size; i++) {
+      Serial.print(mfrc522.uid.uidByte[i], HEX);
+      Serial.print(" ");
     }
+    Serial.println();
 
-    bool isCompleted() {
-      return (completedTask == 1);
+    if (memcmp(mfrc522.uid.uidByte, correctUID, mfrc522.uid.size) == 0) {
+      completedTask = 1;
+      return true;
+    } else {
+      completedTask = -1;
+      return false;
     }
+  }
+
+  bool isCompleted() {
+    return (completedTask == 1);
+  }
 };
 
 UltrasonicSensor ultrasonic1(3, 4);
@@ -118,12 +130,12 @@ Motor motor1(8, 9, 10);
 Motor motor2(13, 11, 12);
 bool driveBackwards = true;
 
-byte correctUID_A[] = {0x4, 0xA3, 0xB0, 0x3F , 0x73 , 0x0 , 0x0};
-byte correctUID_B[] = {0x4, 0x31, 0xD7, 0x3E , 0x73 , 0x0 , 0x0};
-byte correctUID_C[] = {0x4, 0x9E, 0x7, 0x3F , 0x73 , 0x0 , 0x0};
+byte correctUID_A[] = { 0x4, 0xA3, 0xB0, 0x3F, 0x73, 0x0, 0x0 };
+byte correctUID_B[] = { 0x4, 0x31, 0xD7, 0x3E, 0x73, 0x0, 0x0 };
+byte correctUID_C[] = { 0x4, 0x9E, 0x7, 0x3F, 0x73, 0x0, 0x0 };
 
-byte startUID[] = {0xBA, 0x10, 0x7E, 0xBE};
-byte endUID[] = {0x99, 0x21, 0x12, 0x8F};
+byte startUID[] = { 0xBA, 0x10, 0x7E, 0xBE };
+byte endUID[] = { 0x99, 0x21, 0x12, 0x8F };
 int currentTableNo;
 
 void setup() {
@@ -142,7 +154,7 @@ void loop() {
   Serial.println(distance2);
 
   if (reader.isCompleted() || currentTableNo == 0) {
-    if(currentTableNo == 0) {
+    if (currentTableNo == 0) {
       currentTableNo = getCurrentTableNo();
     }
     Serial.print("CurrentTableNo: ");
@@ -208,8 +220,8 @@ void loop() {
   }
 }
 
-int tableNos[] = {1, 2, 3, 4, 5};
-int currentTableNos[] = { -1, -1, -1, -1, -1}; // Initialize currentTableNos with -1 values
+int tableNos[] = { 1, 2, 3, 4, 5 };
+int currentTableNos[] = { -1, -1, -1, -1, -1 };  // Initialize currentTableNos with -1 values
 int lastTableNo;
 
 int getCurrentTableNo() {
